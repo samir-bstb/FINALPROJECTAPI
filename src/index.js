@@ -11,7 +11,7 @@ const __dirname = dirname(__filename);
 
 // Cargar credenciales de Firebase
 const serviceAccount = JSON.parse(
-  await readFile(join(__dirname, '../firebase-admin.json'), 'utf8')
+  await readFile('/etc/secrets/firebase-admin.json', 'utf8')
 );
 
 admin.initializeApp({
