@@ -2,137 +2,110 @@
 import express from 'express';
 import cors from 'cors';
 import admin from 'firebase-admin';
+import { readFile } from 'fs/promises';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-const app = express();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-// ==================== CARGA DE CREDENCIALES FIREBASE ====================
-// ESTA ES LA ÚNICA FORMA QUE FUNCIONA BIEN EN RENDER HOY EN DÍA
-let serviceAccount;
+// Cargar credenciales de Firebase
+const serviceAccount = JSON.parse(
+  await readFile(join(__dirname, '../firebase-admin.json'), 'utf8')
+);
 
-try {
-  const firebaseCredentials = process.env.FIREBASE_SERVICE_ACCOUNT;
-
-  if (!firebaseCredentials) {
-    throw new Error(
-      'Falta la variable de entorno FIREBASE_SERVICE_ACCOUNT. Agrégala en Render → Environment Variables con todo el JSON de tu service account en una sola línea.'
-    );
-  }
-
-  serviceAccount = JSON.parse(firebaseCredentials);
-  console.log('Credenciales de Firebase cargadas correctamente desde variable de entorno');
-} catch (error) {
-  console.error('ERROR FATAL - No se pudieron cargar las credenciales de Firebase:', error.message);
-  process.exit(1); // Fuerza que Render marque el deploy como fallido (así te das cuenta rápido)
-}
-
-// Inicializar Firebase Admin SDK
-try {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
-  console.log('Firebase Admin SDK inicializado correctamente');
-} catch (error) {
-  console.error('Error inicializando Firebase:', error.message);
-  process.exit(1);
-}
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 const db = admin.firestore();
+const app = express();
 
-// ==================== CONFIGURACIÓN DE EXPRESS ====================
 app.use(cors());
 app.use(express.json());
 
-// ==================== RUTA DE PRUEBA ====================
-app.get('/', (req, res) => {
-  res.send('FINALPROJECTAPI funcionando correctamente - Firebase conectado');
-});
-
-// ==================== MESAS ====================
-app.get('/tables', async (req, res) => {
+// ==================== BRANDS ====================
+app.get('/api/brands', async (req, res) => {
   try {
-    const snapshot = await db.collection('tables').get();
-    const tables = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    res.json(tables);
+    const snapshot = await db.collection('brands').get();
+    const brands = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    res.json(brands);
   } catch (e) {
-    console.error('Error en GET /tables:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
-app.get('/tables/:id', async (req, res) => {
+app.get('/api/brands/:id', async (req, res) => {
   try {
-    const doc = await db.collection('tables').doc(req.params.id).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Mesa no encontrada' });
+    const doc = await db.collection('brands').doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ error: 'Brand not found' });
     res.json({ id: doc.id, ...doc.data() });
   } catch (e) {
-    console.error('Error en GET /tables/:id:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
-app.get('/tables/available', async (req, res) => {
+// ==================== PRODUCTS ====================
+app.get('/api/products', async (req, res) => {
   try {
-    const { capacity, date, time } = req.query;
-    let query = db.collection('tables');
-    if (capacity) query = query.where('capacity', '>=', parseInt(capacity));
+    const { brandId } = req.query; // Soporte para ?brandId= (opcional, pero lo incluyo aquí para eficiencia)
+    let query = db.collection('products');
+    if (brandId) query = query.where('brandId', '==', brandId);
     const snapshot = await query.get();
-    let tables = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    if (date && time) {
-      const resSnap = await db.collection('reservations')
-        .where('date', '==', date)
-        .where('time', '==', time)
-        .get();
-      const reservedIds = resSnap.docs.map(d => d.data().tableId);
-      tables = tables.filter(t => !reservedIds.includes(t.id));
-    }
-    res.json(tables);
+    const products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    res.json(products);
   } catch (e) {
-    console.error('Error en GET /tables/available:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// ==================== RESERVAS ====================
-app.get('/reservations', async (req, res) => {
+app.get('/api/products/:id', async (req, res) => {
   try {
-    const snapshot = await db.collection('reservations').get();
-    const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    res.json(list);
+    const doc = await db.collection('products').doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ error: 'Product not found' });
+    res.json({ id: doc.id, ...doc.data() });
   } catch (e) {
-    console.error('Error en GET /reservations:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post('/reservations', async (req, res) => {
+app.get('/api/products/search', async (req, res) => {
   try {
-    const data = {
-      ...req.body,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
-    const ref = await db.collection('reservations').add(data);
-    res.status(201).json({ id: ref.id, ...data });
+    const { q } = req.query;
+    if (!q) return res.status(400).json({ error: 'Query parameter q is required' });
+    const lowercaseQuery = q.toLowerCase();
+    const snapshot = await db.collection('products').get(); // Nota: Para búsquedas complejas, usa un índice o extensiones como Algolia; esto es básico
+    const products = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(product =>
+        product.name.toLowerCase().includes(lowercaseQuery) ||
+        product.description.toLowerCase().includes(lowercaseQuery)
+      );
+    res.json(products);
   } catch (e) {
-    console.error('Error en POST /reservations:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
-app.delete('/reservations/:id', async (req, res) => {
+app.get('/api/products/featured', async (req, res) => {
   try {
-    await db.collection('reservations').doc(req.params.id).delete();
-    res.json({ success: true });
+    const snapshot = await db.collection('products')
+      .where('rating', '>=', 4.7)
+      .orderBy('rating', 'desc')
+      .limit(6)
+      .get();
+    const products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    res.json(products);
   } catch (e) {
-    console.error('Error en DELETE /reservations/:id:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// ==================== INICIO DEL SERVIDOR ====================
+app.get('/', (req, res) => {
+  res.send('FINALPROJECTAPI funcionando correctamente');
+});
+
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
-  console.log(`API corriendo en el puerto ${PORT}`);
-  console.log(`URL: https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'localhost'}:${PORT}`);
+  console.log(`API corriendo en puerto ${PORT}`);
 });
