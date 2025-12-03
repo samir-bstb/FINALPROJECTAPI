@@ -1,13 +1,14 @@
 // FINALPROJECTAPI/src/index.js
-import express from 'express';
-import cors from 'cors';
-import admin from 'firebase-admin';
+import express from 'express'; // framework que usamos para crear la API (servidor web ligero)
+import cors from 'cors'; // Permite que el frontend que está en otro dominio pueda hablar con esta API sin que el navegador lo bloquee
+import admin from 'firebase-admin'; // permite leer y escribir en Firestore sin importar las reglas de seguridad
 
-const app = express();
+const app = express(); 
 
 // ==================== CARGA DE CREDENCIALES FIREBASE ====================
-let serviceAccount;
+let serviceAccount; // contener el JSON completo de la clave privada de Firebase
 
+// Lee la variable de entorno que se encuentra en Render
 try {
   const firebaseCredentials = process.env.FIREBASE_SERVICE_ACCOUNT;
 
@@ -17,7 +18,7 @@ try {
     );
   }
 
-  serviceAccount = JSON.parse(firebaseCredentials);
+  serviceAccount = JSON.parse(firebaseCredentials); // Convierte el string en un objeto JavaScript que Firebase interpreta
   console.log('Credenciales de Firebase cargadas correctamente desde variable de entorno');
 } catch (error) {
   console.error('ERROR FATAL - No se pudieron cargar las credenciales de Firebase:', error.message);
@@ -35,30 +36,30 @@ try {
   process.exit(1);
 }
 
-const db = admin.firestore();
+const db = admin.firestore(); // Crea el objeto para hablar con la BD
 
 // ==================== CONFIGURACIÓN DE EXPRESS ====================
 app.use(cors());
-app.use(express.json());
+app.use(express.json()); // Le dice a Express cada vez que alguien envíe un POST con cuerpo JSON, conviértelo a req.body
 
 // ==================== RUTA DE PRUEBA ====================
 app.get('/', (req, res) => {
-  res.send('API de productos y marcas funcionando correctamente - Firebase conectado');
+  res.send('API de productos y marcas funcionando correctamente - Firebase conectado'); // Sirve para saber que el servidor está vivo.
 });
 
 // ==================== BRANDS ====================
-app.get('/api/brands', async (req, res) => {
+app.get('/api/brands', async (req, res) => { 
   try {
-    const snapshot = await db.collection('brands').get();
-    const brands = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    res.json(brands);
+    const snapshot = await db.collection('brands').get(); // Trae todos los documentos de la colección "brands" en la BD
+    const brands = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); // Convierte cada documento en un objeto de JavaScript y le agrega el id
+    res.json(brands); // Devuelve la lista en formato JSON
   } catch (e) {
     console.error('Error en GET /api/brands:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
-app.get('/api/brands/:id', async (req, res) => {
+app.get('/api/brands/:id', async (req, res) => { 
   try {
     const doc = await db.collection('brands').doc(req.params.id).get();
     if (!doc.exists) return res.status(404).json({ error: 'Brand not found' });
@@ -101,7 +102,7 @@ app.get('/api/products/:id', async (req, res) => {
 
 app.get('/api/products/search', async (req, res) => {
   try {
-    const { q } = req.query;
+    const { q } = req.query;  // req.query toma parámetros de la URL después del ?
     if (!q) return res.status(400).json({ error: 'Parámetro "q" es requerido' });
 
     const lowercase = q.toLowerCase();
@@ -119,6 +120,7 @@ app.get('/api/products/search', async (req, res) => {
   }
 });
 
+// Consulta avanzada: productos con rating ≥ 4.7, ordenados de mayor a menor, solo los 6 primeros
 app.get('/api/products/featured', async (req, res) => {
   try {
     const snapshot = await db.collection('products')
@@ -136,8 +138,9 @@ app.get('/api/products/featured', async (req, res) => {
 });
 
 // ==================== INICIO DEL SERVIDOR ====================
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000; // Render asigna un puerto dinámico
 
+// Inicializa el servidor y muestra en los logs la URL real para que sepas dónde está viviendo tu API.
 app.listen(PORT, () => {
   console.log(`API corriendo en el puerto ${PORT}`);
   console.log(`URL: https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'localhost'}:${PORT}`);
