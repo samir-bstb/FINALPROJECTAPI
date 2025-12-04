@@ -1,5 +1,5 @@
 // FINALPROJECTAPI/src/index.js
-import express from 'express'; // framework que usamos para crear la API (servidor web ligero)
+import express from 'express'; // framework que usamos para crear la API 
 import cors from 'cors'; // Permite que el frontend que está en otro dominio pueda hablar con esta API sin que el navegador lo bloquee
 import admin from 'firebase-admin'; // permite leer y escribir en Firestore sin importar las reglas de seguridad
 
